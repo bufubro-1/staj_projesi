@@ -1,0 +1,7 @@
+.env
+venv/
+__pycache__/
+*.csv
+!master_sirketler.csv
+!und_sirketler.csv
+*.log

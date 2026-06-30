@@ -14,8 +14,17 @@ import os
 import time
 import random
 import requests
+import spacy
 from bs4 import BeautifulSoup
 from tqdm import tqdm
+
+try:
+    # Çok dilli küçük modeli yükle
+    nlp = spacy.load("xx_ent_wiki_sm")
+    print("[*] Spacy NLP modeli (xx_ent_wiki_sm) başarıyla yüklendi.")
+except Exception as e:
+    nlp = None
+    print(f"[-] Spacy modeli yüklenemedi, varsayılan denetim kullanılacak. Hata: {e}")
 
 INPUT_CSV = "sirketler.csv"  # veya master_sirketler.csv
 OUTPUT_CSV = "yoneticiler.csv"
@@ -158,6 +167,12 @@ def extract_people(soup):
                     harfler_sadece = all(k.replace('.', '').isalpha() for k in kelimeler)
                     if harfler_sadece and all(k[0].isupper() for k in kelimeler if len(k) > 1):
                         if not any(g in onceki.lower() for g in GECERSIZ_KELIMELER):
+                            # Spacy Denetimi
+                            if nlp is not None:
+                                doc = nlp(onceki)
+                                if len(doc.ents) > 0 and not any(ent.label_ == "PER" for ent in doc.ents):
+                                    continue # İçinde ORG, LOC var ama PER yoksa atla
+                                    
                             kisiler.append({'isim': onceki, 'unvan': clean_unvan(unvan)})
                             continue
             
@@ -170,6 +185,11 @@ def extract_people(soup):
                     harfler_sadece = all(k.replace('.', '').isalpha() for k in kelimeler)
                     if harfler_sadece and all(k[0].isupper() for k in kelimeler if len(k) > 1):
                         if not any(g in potansiyel_isim.lower() for g in GECERSIZ_KELIMELER):
+                            # Spacy Denetimi
+                            if nlp is not None:
+                                doc = nlp(potansiyel_isim)
+                                if len(doc.ents) > 0 and not any(ent.label_ == "PER" for ent in doc.ents):
+                                    continue
                             kisiler.append({'isim': potansiyel_isim, 'unvan': clean_unvan(potansiyel_unvan)})
     
     # Tekilleştir (Deduplication)
@@ -247,6 +267,17 @@ def main():
     else:
         print(f"[-] {INPUT_CSV} bulunamadı!")
         return
+        
+    # Önceki taramada erişilemeyen siteleri oku ki tekrar vakit kaybetmeyelim
+    erisilmez_siteler = set()
+    if os.path.exists(TARANAN_CSV):
+        with open(TARANAN_CSV, 'r', encoding='utf-8') as f:
+            try:
+                reader = csv.DictReader(f)
+                erisilmez_siteler = {row['domain'] for row in reader if row.get('durum') == 'ERISILEMEDI'}
+                print(f"[*] Önceki taramada erişilemeyen {len(erisilmez_siteler)} site atlanacak.")
+            except Exception:
+                pass
     
     print(f"[i] Toplam {len(sirketler)} şirketin websitesi taranacak...")
     print(f"[i] Her şirket için ~{len(YONETIM_SAYFALARI)} farklı sayfa denenecek.\n")
@@ -274,6 +305,17 @@ def main():
             ad = sirket.get('ad', '')
             
             if not domain:
+                continue
+                
+            if domain in erisilmez_siteler:
+                erisim_yok_sayisi += 1
+                taran_writer.writerow({
+                    'ad': ad,
+                    'domain': domain,
+                    'durum': 'ERISILEMEDI',
+                    'bulunan_kisi': 0,
+                    'bulunan_mail': 0
+                })
                 continue
             
             kisiler, mailler, erisilebildi = scrape_company_website(domain)
