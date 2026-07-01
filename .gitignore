@@ -1,7 +1,12 @@
 .env
 venv/
 __pycache__/
+*.db
 *.csv
 !master_sirketler.csv
 !und_sirketler.csv
 *.log
+dotnet/**/bin/
+dotnet/**/obj/
+
+.fake
